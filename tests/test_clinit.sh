@@ -67,6 +67,41 @@ echo "$actual_sub" | grep -q "Installed" \
   && pass "subdir auto-detect from root clinit.json" || fail "subdir auto-detect failed: '$actual_sub'"
 [ -f "$PROJ2/CLAUDE.md" ] && pass "monorepo CLAUDE.md installed" || fail "monorepo CLAUDE.md not found"
 
+# ── real-kit template structure (runs when kit is a sibling of clinit/) ──
+
+CLINIT_DIR="$(dirname "$CLINIT")"
+KIT_DIR="$CLINIT_DIR/../ai-dev-setup-kit"
+TMPL="$KIT_DIR/project-template/.claude"
+if [ -d "$TMPL" ]; then
+  # top-level skill presence
+  for skill in swift-code-reviewer swift-concurrency swift-expert swift-testing swiftui-expert-skill swiftui-ui-patterns; do
+    [ -f "$TMPL/skills/$skill/SKILL.md" ] \
+      && pass "kit: $skill/SKILL.md present" \
+      || fail "kit: $skill/SKILL.md missing"
+  done
+
+  # no stale directories
+  [ ! -d "$TMPL/skills-ios" ] \
+    && pass "kit: no stale skills-ios directory" \
+    || fail "kit: stale skills-ios still present"
+  [ ! -d "$TMPL/skills/swift-code-reviewer/skills" ] \
+    && pass "kit: swift-code-reviewer/skills/ removed (sub-skills promoted)" \
+    || fail "kit: swift-code-reviewer/skills/ still nested"
+
+  # end-to-end apply
+  PROJ3="$TMP/project3"
+  mkdir -p "$PROJ3" && git -C "$PROJ3" init -q
+  actual_kit=$(cd "$PROJ3" && bash "$CLINIT" use "$KIT_DIR" 2>&1)
+  for skill in swift-code-reviewer swift-concurrency swift-expert swift-testing swiftui-expert-skill swiftui-ui-patterns; do
+    [ -f "$PROJ3/.claude/skills/$skill/SKILL.md" ] \
+      && pass "kit apply: $skill installed" \
+      || fail "kit apply: $skill not found"
+  done
+  [ ! -d "$PROJ3/.claude/skills-ios" ] \
+    && pass "kit apply: no skills-ios in scaffolded project" \
+    || fail "kit apply: stale skills-ios appeared"
+fi
+
 # ── unknown command ───────────────────────────────────────────────────────
 
 out3=$(bash "$CLINIT" badcmd 2>&1 || true)

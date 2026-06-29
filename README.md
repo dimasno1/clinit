@@ -109,7 +109,6 @@ clinit injects and maintains this block in the target project's `.gitignore`:
 CLAUDE.md
 .claude/skills/
 .claude/rules/
-.claude/skills-ios/
 .claude/project_map.md
 .claude/.map_checkpoint
 .claude.backup.*
