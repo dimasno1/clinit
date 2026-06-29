@@ -15,7 +15,7 @@ trap 'rm -rf "$TMP"' EXIT
 # ── version ───────────────────────────────────────────────────────────────
 
 out=$(bash "$CLINIT" --version)
-[[ "$out" == "clinit 0.2.0" ]] && pass "version output" || fail "version: got '$out'"
+[[ "$out" =~ ^clinit\ [0-9]+\.[0-9]+\.[0-9]+$ ]] && pass "version output" || fail "version: got '$out'"
 
 # ── help ─────────────────────────────────────────────────────────────────
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.2.1] - 2026-06-29
+
+### Fixed
+- `setup_gitignore`: `awk -v new="..."` rejected multiline strings; replaced with temp-file + `getline` approach. The update path (when `.gitignore` already has a `claude-kit-begin` block) now works correctly.
+
 ## [0.2.0] - 2026-06-29
 
 ### Added

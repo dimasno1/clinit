@@ -2,7 +2,7 @@
 # clinit — Claude Code project scaffolder
 set -euo pipefail
 
-VERSION="0.2.0"
+VERSION="0.2.1"
 LOCAL_TEMPLATE="$HOME/.claude/project-template"
 _TMP=""
 trap '[ -n "$_TMP" ] && rm -rf "$_TMP"' EXIT
@@ -51,9 +51,15 @@ setup_gitignore() {
   fi
 
   if grep -qF "$begin" .gitignore; then
-    awk -v new="$GITIGNORE_BLOCK" \
-      '/^# claude-kit-begin$/{print new; skip=1; next} /^# claude-kit-end$/{skip=0; next} !skip{print}' \
-      .gitignore > .gitignore.tmp && mv .gitignore.tmp .gitignore
+    local tmp_block; tmp_block=$(mktemp)
+    printf '%s\n' "$GITIGNORE_BLOCK" > "$tmp_block"
+    awk -v f="$tmp_block" '
+      /^# claude-kit-begin$/ { while ((getline < f) > 0) print; close(f); skip=1; next }
+      /^# claude-kit-end$/ { skip=0; next }
+      !skip
+    ' .gitignore > .gitignore.tmp
+    rm -f "$tmp_block"
+    mv .gitignore.tmp .gitignore
     echo "✅ .gitignore updated"
   else
     printf '\n%s\n' "$GITIGNORE_BLOCK" >> .gitignore
