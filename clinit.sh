@@ -4,6 +4,8 @@ set -euo pipefail
 
 VERSION="0.1.1"
 LOCAL_TEMPLATE="$HOME/.claude/project-template"
+_TMP=""
+trap '[ -n "$_TMP" ] && rm -rf "$_TMP"' EXIT
 
 GITIGNORE_BLOCK='# claude-kit-begin
 # local-only claude kit files — do not commit
@@ -101,14 +103,13 @@ cmd_use() {
     exit 1
   fi
 
-  local tmp; tmp=$(mktemp -d)
-  trap 'rm -rf "$tmp"' EXIT
+  _TMP=$(mktemp -d)
 
   echo "⬇️  Cloning $git_url..."
-  git clone --depth 1 --quiet "$git_url" "$tmp/kit"
+  git clone --depth 1 --quiet "$git_url" "$_TMP/kit"
 
-  local kit_root="$tmp/kit"
-  [ -n "$subdir" ] && kit_root="$tmp/kit/$subdir"
+  local kit_root="$_TMP/kit"
+  [ -n "$subdir" ] && kit_root="$_TMP/kit/$subdir"
 
   local manifest="$kit_root/clinit.json"
   if [ ! -f "$manifest" ]; then
