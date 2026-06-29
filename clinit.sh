@@ -2,7 +2,7 @@
 # clinit — Claude Code project scaffolder
 set -euo pipefail
 
-VERSION="0.1.0"
+VERSION="0.1.1"
 LOCAL_TEMPLATE="$HOME/.claude/project-template"
 
 GITIGNORE_BLOCK='# claude-kit-begin
@@ -22,11 +22,12 @@ usage() {
 clinit $VERSION — Claude Code project scaffolder
 
 Usage:
-  clinit                 Apply template from ~/.claude/project-template/
-  clinit use <git-url>   Fetch and apply template from a remote kit repo
-  clinit --force         Back up existing files, then overwrite all
-  clinit --version       Show version
-  clinit --help          Show this help
+  clinit                          Apply template from ~/.claude/project-template/
+  clinit use <git-url>            Fetch and apply template from a remote kit repo
+  clinit use <git-url> --subdir <path>  Kit is inside a subdirectory of the repo
+  clinit --force                  Back up existing files, then overwrite all
+  clinit --version                Show version
+  clinit --help                   Show this help
 EOF
 }
 
@@ -93,7 +94,7 @@ apply_template() {
 }
 
 cmd_use() {
-  local git_url="$1" force="$2"
+  local git_url="$1" force="$2" subdir="$3"
 
   if ! command -v jq &>/dev/null; then
     echo "❌ jq is required for 'clinit use' (brew install jq)"
@@ -106,17 +107,20 @@ cmd_use() {
   echo "⬇️  Cloning $git_url..."
   git clone --depth 1 --quiet "$git_url" "$tmp/kit"
 
-  local manifest="$tmp/kit/clinit.json"
+  local kit_root="$tmp/kit"
+  [ -n "$subdir" ] && kit_root="$tmp/kit/$subdir"
+
+  local manifest="$kit_root/clinit.json"
   if [ ! -f "$manifest" ]; then
-    echo "❌ clinit.json not found in repo root"
+    echo "❌ clinit.json not found${subdir:+ in '$subdir'}"
     exit 1
   fi
 
   local template_rel; template_rel=$(jq -r '.template // "project-template"' "$manifest")
-  local template="$tmp/kit/$template_rel"
+  local template="$kit_root/$template_rel"
 
   if [ ! -d "$template" ]; then
-    echo "❌ Template directory '$template_rel' not found in repo"
+    echo "❌ Template directory '$template_rel' not found"
     exit 1
   fi
 
@@ -126,15 +130,23 @@ cmd_use() {
 # ── argument parsing ───────────────────────────────────────────────────────
 
 FORCE=false
+SUBDIR=""
 ARGS=()
 
-for arg in "$@"; do
+i=1
+while [ $i -le $# ]; do
+  arg="${!i}"
   case "$arg" in
     --force)   FORCE=true ;;
     --version) echo "clinit $VERSION"; exit 0 ;;
     --help|-h) usage; exit 0 ;;
+    --subdir)
+      i=$((i + 1))
+      SUBDIR="${!i}"
+      ;;
     *)         ARGS+=("$arg") ;;
   esac
+  i=$((i + 1))
 done
 
 # ── dispatch ───────────────────────────────────────────────────────────────
@@ -142,10 +154,10 @@ done
 case "${ARGS[0]:-}" in
   use)
     if [ ${#ARGS[@]} -lt 2 ]; then
-      echo "Usage: clinit use <git-url>"
+      echo "Usage: clinit use <git-url> [--subdir <path>]"
       exit 1
     fi
-    cmd_use "${ARGS[1]}" "$FORCE"
+    cmd_use "${ARGS[1]}" "$FORCE" "$SUBDIR"
     ;;
   "")
     if [ ! -d "$LOCAL_TEMPLATE" ]; then
