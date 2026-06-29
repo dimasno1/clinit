@@ -2,7 +2,7 @@
 # clinit — Claude Code project scaffolder
 set -euo pipefail
 
-VERSION="0.1.1"
+VERSION="0.2.0"
 LOCAL_TEMPLATE="$HOME/.claude/project-template"
 _TMP=""
 trap '[ -n "$_TMP" ] && rm -rf "$_TMP"' EXIT
@@ -24,12 +24,20 @@ usage() {
 clinit $VERSION — Claude Code project scaffolder
 
 Usage:
-  clinit                          Apply template from ~/.claude/project-template/
-  clinit use <git-url>            Fetch and apply template from a remote kit repo
-  clinit use <git-url> --subdir <path>  Kit is inside a subdirectory of the repo
-  clinit --force                  Back up existing files, then overwrite all
-  clinit --version                Show version
-  clinit --help                   Show this help
+  clinit                    Apply default template from ~/.claude/project-template/
+  clinit use <source>       Apply template from a source:
+
+    git URL:      clinit use git@github.com:user/repo.git
+    local dir:    clinit use ./path/to/kit
+    config URL:   clinit use https://host/path/to/clinit.json
+
+  clinit --force            Back up existing files, then overwrite all
+  clinit --version          Show version
+  clinit --help             Show this help
+
+Options:
+  --subdir <path>  Kit is in this subdirectory of the source (overrides clinit.json)
+  --force          Back up CLAUDE.md and .claude/, then overwrite
 EOF
 }
 
@@ -95,37 +103,86 @@ apply_template() {
   echo "Next: fill in CLAUDE.md with build/test commands, then run /update-map"
 }
 
-cmd_use() {
-  local git_url="$1" force="$2" subdir="$3"
+_require_cmd() {
+  for cmd in "$@"; do
+    command -v "$cmd" &>/dev/null || { echo "❌ $cmd is required (brew install $cmd)"; exit 1; }
+  done
+}
 
-  if ! command -v jq &>/dev/null; then
-    echo "❌ jq is required for 'clinit use' (brew install jq)"
-    exit 1
+# Resolve kit_root from clinit.json at $root_dir, following "subdir" only if
+# the template directory does not already exist at $root_dir (pointer vs full kit).
+_resolve_subdir() {
+  local root_dir="$1" subdir_flag="$2"
+  local subdir="$subdir_flag"
+
+  if [ -z "$subdir" ] && [ -f "$root_dir/clinit.json" ]; then
+    local detected; detected=$(jq -r '.subdir // empty' "$root_dir/clinit.json")
+    if [ -n "$detected" ]; then
+      local template_check; template_check=$(jq -r '.template // "project-template"' "$root_dir/clinit.json")
+      if [ ! -d "$root_dir/$template_check" ]; then
+        subdir="$detected"
+      fi
+    fi
   fi
 
-  _TMP=$(mktemp -d)
+  if [ -n "$subdir" ]; then
+    echo "$root_dir/$subdir"
+  else
+    echo "$root_dir"
+  fi
+}
 
-  echo "⬇️  Cloning $git_url..."
-  git clone --depth 1 --quiet "$git_url" "$_TMP/kit"
+_apply_kit_root() {
+  local kit_root="$1" force="$2"
 
-  local kit_root="$_TMP/kit"
-  [ -n "$subdir" ] && kit_root="$_TMP/kit/$subdir"
-
+  _require_cmd jq
   local manifest="$kit_root/clinit.json"
-  if [ ! -f "$manifest" ]; then
-    echo "❌ clinit.json not found${subdir:+ in '$subdir'}"
-    exit 1
-  fi
+  [ ! -f "$manifest" ] && { echo "❌ clinit.json not found in: $kit_root"; exit 1; }
 
   local template_rel; template_rel=$(jq -r '.template // "project-template"' "$manifest")
   local template="$kit_root/$template_rel"
-
-  if [ ! -d "$template" ]; then
-    echo "❌ Template directory '$template_rel' not found"
-    exit 1
-  fi
+  [ ! -d "$template" ] && { echo "❌ Template directory '$template_rel' not found in kit"; exit 1; }
 
   apply_template "$template" "$force"
+}
+
+cmd_use() {
+  local source="$1" force="$2" subdir_flag="$3"
+  local kit_root=""
+
+  if [[ "$source" =~ ^https?://.+\.json$ ]]; then
+    # JSON config URL: fetch manifest, read repo + subdir, then clone
+    _require_cmd jq curl
+    echo "⬇️  Fetching config from $source..."
+    local json; json=$(curl -fsSL "$source") || { echo "❌ Failed to fetch $source"; exit 1; }
+    local repo subdir_json
+    repo=$(echo "$json" | jq -r '.repo // empty')
+    subdir_json=$(echo "$json" | jq -r '.subdir // empty')
+    [ -z "$repo" ] && { echo "❌ clinit.json missing 'repo' field"; exit 1; }
+    _TMP=$(mktemp -d)
+    echo "⬇️  Cloning $repo..."
+    git clone --depth 1 --quiet "$repo" "$_TMP/kit"
+    local subdir="${subdir_flag:-$subdir_json}"
+    kit_root="$_TMP/kit"
+    [ -n "$subdir" ] && kit_root="$kit_root/$subdir"
+
+  elif [[ "$source" == ./* || "$source" == /* || "$source" == ~/* || "$source" == ../* ]]; then
+    # Local path — user points at kit or repo root
+    _require_cmd jq
+    local expanded="${source/#\~/$HOME}"
+    [ ! -d "$expanded" ] && { echo "❌ Not a directory: $expanded"; exit 1; }
+    kit_root=$(_resolve_subdir "$expanded" "$subdir_flag")
+
+  else
+    # Git URL — clone, then auto-detect subdir from root clinit.json
+    _require_cmd jq
+    _TMP=$(mktemp -d)
+    echo "⬇️  Cloning $source..."
+    git clone --depth 1 --quiet "$source" "$_TMP/kit"
+    kit_root=$(_resolve_subdir "$_TMP/kit" "$subdir_flag")
+  fi
+
+  _apply_kit_root "$kit_root" "$force"
 }
 
 # ── argument parsing ───────────────────────────────────────────────────────
@@ -155,7 +212,7 @@ done
 case "${ARGS[0]:-}" in
   use)
     if [ ${#ARGS[@]} -lt 2 ]; then
-      echo "Usage: clinit use <git-url> [--subdir <path>]"
+      echo "Usage: clinit use <source> [--subdir <path>]"
       exit 1
     fi
     cmd_use "${ARGS[1]}" "$FORCE" "$SUBDIR"
